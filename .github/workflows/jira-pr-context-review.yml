@@ -295,6 +295,196 @@ jobs:
               body
             });
 
+      - name: Build PR diff for AI review tools
+        id: pr_diff
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require("fs");
+            const files = await github.paginate(github.rest.pulls.listFiles, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.payload.pull_request.number,
+              per_page: 100
+            });
+
+            const chunks = files.map(file => {
+              const patch = file.patch || "(no text patch available for this file)";
+              return [
+                `File: ${file.filename}`,
+                `Status: ${file.status}`,
+                `Additions: ${file.additions}, Deletions: ${file.deletions}`,
+                "Patch:",
+                patch,
+                ""
+              ].join("\n");
+            });
+
+            const combined = chunks.join("\n");
+            const truncated = combined.slice(0, 120000);
+            fs.writeFileSync("pr_patch.txt", truncated, "utf8");
+            core.setOutput("truncated", combined.length > truncated.length ? "true" : "false");
+
+      - name: Run dual AI review (GPT + Claude)
+        id: dual_ai_review
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_MODEL: ${{ vars.OPENAI_MODEL || 'gpt-5.3-codex' }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_MODEL: ${{ vars.ANTHROPIC_MODEL || 'claude-opus-4-1-20250805' }}
+          JIRA_KEY: ${{ steps.jira_key.outputs.jira_key }}
+          JIRA_SUMMARY: ${{ steps.jira.outputs.summary }}
+          JIRA_ACCEPTANCE: ${{ steps.jira.outputs.acceptance }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${OPENAI_API_KEY:-}" ] || [ -z "${ANTHROPIC_API_KEY:-}" ]; then
+            echo "OPENAI_API_KEY and ANTHROPIC_API_KEY secrets are required."
+            exit 1
+          fi
+
+          python - <<'PY'
+          import json
+          import os
+          import urllib.request
+
+          jira_key = os.environ.get("JIRA_KEY", "")
+          jira_summary = os.environ.get("JIRA_SUMMARY", "")
+          jira_acceptance = os.environ.get("JIRA_ACCEPTANCE", "")
+
+          with open("pr_patch.txt", "r", encoding="utf-8") as f:
+              pr_patch = f.read()
+
+          prompt = f"""You are a senior code reviewer.
+          Review this pull request strictly against the Jira context.
+
+          Jira Ticket: {jira_key}
+          Jira Summary: {jira_summary}
+          Jira Acceptance Criteria:
+          {jira_acceptance}
+
+          Pull Request Patch (possibly truncated):
+          {pr_patch}
+
+          Provide output in Markdown with sections:
+          1) Verdict (PASS / CONCERNS / BLOCKING)
+          2) Jira criteria coverage
+          3) Findings (if any)
+          4) Suggested fixes
+          Keep it concise and actionable.
+          """
+
+          def call_openai():
+              payload = {
+                  "model": os.environ.get("OPENAI_MODEL", "gpt-5.3-codex"),
+                  "input": prompt
+              }
+              req = urllib.request.Request(
+                  "https://api.openai.com/v1/responses",
+                  data=json.dumps(payload).encode("utf-8"),
+                  headers={
+                      "Authorization": f"Bearer {os.environ['OPENAI_API_KEY']}",
+                      "Content-Type": "application/json",
+                  },
+                  method="POST",
+              )
+              with urllib.request.urlopen(req) as resp:
+                  data = json.loads(resp.read().decode("utf-8"))
+              text = data.get("output_text", "").strip()
+              if not text:
+                  text = "No review text returned by GPT tool."
+              return text
+
+          def call_anthropic():
+              payload = {
+                  "model": os.environ.get("ANTHROPIC_MODEL", "claude-opus-4-1-20250805"),
+                  "max_tokens": 1200,
+                  "messages": [
+                      {"role": "user", "content": prompt}
+                  ]
+              }
+              req = urllib.request.Request(
+                  "https://api.anthropic.com/v1/messages",
+                  data=json.dumps(payload).encode("utf-8"),
+                  headers={
+                      "x-api-key": os.environ["ANTHROPIC_API_KEY"],
+                      "anthropic-version": "2023-06-01",
+                      "Content-Type": "application/json",
+                  },
+                  method="POST",
+              )
+              with urllib.request.urlopen(req) as resp:
+                  data = json.loads(resp.read().decode("utf-8"))
+              parts = data.get("content", [])
+              text = ""
+              for part in parts:
+                  if part.get("type") == "text":
+                      text += part.get("text", "")
+              text = text.strip()
+              if not text:
+                  text = "No review text returned by Claude tool."
+              return text
+
+          gpt_review = call_openai()
+          claude_review = call_anthropic()
+
+          with open("gpt_review.md", "w", encoding="utf-8") as f:
+              f.write(gpt_review)
+          with open("claude_review.md", "w", encoding="utf-8") as f:
+              f.write(claude_review)
+          PY
+
+      - name: Post dual AI review comment
+        uses: actions/github-script@v7
+        env:
+          JIRA_KEY: ${{ steps.jira_key.outputs.jira_key }}
+        with:
+          script: |
+            const fs = require("fs");
+            const marker = "<!-- dual-ai-review -->";
+            const gptReview = fs.readFileSync("gpt_review.md", "utf8");
+            const claudeReview = fs.readFileSync("claude_review.md", "utf8");
+
+            const body = [
+              marker,
+              "## Automated Dual-Tool PR Review",
+              "",
+              `Ticket: ${process.env.JIRA_KEY || ""}`,
+              "",
+              "### Tool 1: GPT 5.3-codex",
+              gptReview,
+              "",
+              "### Tool 2: Claude 4.6 Opus High",
+              claudeReview
+            ].join("\n");
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              per_page: 100
+            });
+
+            const existing = comments.find(comment =>
+              comment.user?.type === "Bot" && comment.body?.includes(marker)
+            );
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body
+              });
+            }
+
       - name: Post final automated review result
         if: always()
         uses: actions/github-script@v7
