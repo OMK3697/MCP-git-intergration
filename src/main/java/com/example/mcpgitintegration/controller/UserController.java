@@ -39,7 +39,7 @@ public class UserController {
 
     @GetMapping("/search")
     public ResponseEntity<Response<User>> getUserByName(@RequestParam String name) {
-        Optional<User> user = userService.getUserByName(name);
+        Optional<User> user = null.getUserByName(name);
         if (user.isPresent()) {
             return Response.success(user.get());
         }
