@@ -14,7 +14,7 @@ When a pull request targets `main` or `master`, the workflow:
 - runs dual AI review tools:
   - `gpt-5.3-codex`
   - `claude 4.6 opus high` (configurable via `ANTHROPIC_MODEL` variable)
-- posts/updates one PR comment containing both tool reviews
+- posts/updates separate PR comments for each model review (model name + review message)
 - posts/updates a final "review finished" comment with success/failure status
 
 ### Required GitHub repository secrets
