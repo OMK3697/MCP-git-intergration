@@ -6,7 +6,8 @@ this repo is for the mcp-git-integration
 This repository includes a GitHub Action at `.github/workflows/jira-pr-context-review.yml`.
 
 When a pull request targets `main` or `master`, the workflow:
-- extracts Jira key from PR title/body/branch (e.g. `KAN-4`)
+- extracts Jira key from branch name only
+- requires branch name to exactly match Jira key (e.g. `KAN-4`)
 - fetches Jira issue summary/description from Atlassian
 - updates PR description with Jira context + acceptance criteria checklist
 - posts/updates a Jira-context review kickoff comment
@@ -30,4 +31,4 @@ Optional repository variables:
 - `OPENAI_MODEL` (default: `gpt-5.3-codex`)
 - `ANTHROPIC_MODEL` (default: `claude-opus-4-1-20250805`)
 
-If Jira key is missing from PR title/body/branch, the workflow comments and fails the check.
+If branch name is not a valid Jira key (example: `KAN-4`), the workflow comments and fails the check.
