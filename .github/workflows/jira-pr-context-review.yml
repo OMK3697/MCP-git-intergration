@@ -1,0 +1,296 @@
+name: Jira PR Context Review
+
+on:
+  pull_request:
+    branches:
+      - main
+      - master
+    types:
+      - opened
+      - reopened
+      - edited
+      - synchronize
+      - ready_for_review
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  jira-context-review:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Extract Jira key from PR title/body/branch
+        id: jira_key
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_BRANCH: ${{ github.head_ref }}
+        run: |
+          python - <<'PY'
+          import os
+          import re
+
+          title = os.environ.get("PR_TITLE", "")
+          body = os.environ.get("PR_BODY", "")
+          branch = os.environ.get("PR_BRANCH", "")
+          text = "\n".join([title, body, branch])
+
+          match = re.search(r"\b([A-Z][A-Z0-9]+-\d+)\b", text)
+          jira_key = match.group(1) if match else ""
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as out:
+              out.write(f"jira_key={jira_key}\n")
+          PY
+
+      - name: Comment when Jira key is missing
+        if: steps.jira_key.outputs.jira_key == ''
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const body = [
+              "Jira context review could not start because no Jira key was found.",
+              "",
+              "Include a ticket key like `KAN-123` in one of:",
+              "- PR title",
+              "- PR description",
+              "- branch name"
+            ].join("\n");
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body
+            });
+
+      - name: Fail check when Jira key is missing
+        if: steps.jira_key.outputs.jira_key == ''
+        run: |
+          echo "Missing Jira key in PR title/body/branch."
+          exit 1
+
+      - name: Fetch Jira issue details
+        id: jira
+        env:
+          JIRA_BASE_URL: ${{ secrets.JIRA_BASE_URL }}
+          JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
+          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+          JIRA_KEY: ${{ steps.jira_key.outputs.jira_key }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${JIRA_BASE_URL:-}" ] || [ -z "${JIRA_EMAIL:-}" ] || [ -z "${JIRA_API_TOKEN:-}" ]; then
+            echo "JIRA_BASE_URL, JIRA_EMAIL, JIRA_API_TOKEN secrets are required."
+            exit 1
+          fi
+
+          JIRA_BASE_URL="${JIRA_BASE_URL%/}"
+          API_URL="${JIRA_BASE_URL}/rest/api/3/issue/${JIRA_KEY}?fields=summary,description,status,issuetype"
+
+          HTTP_CODE=$(curl -sS -u "${JIRA_EMAIL}:${JIRA_API_TOKEN}" \
+            -H "Accept: application/json" \
+            -w "%{http_code}" \
+            -o jira_issue.json \
+            "${API_URL}")
+
+          if [ "${HTTP_CODE}" != "200" ]; then
+            echo "Failed to fetch Jira issue ${JIRA_KEY}. HTTP ${HTTP_CODE}"
+            cat jira_issue.json || true
+            exit 1
+          fi
+
+          python - <<'PY'
+          import json
+          import os
+
+          with open("jira_issue.json", "r", encoding="utf-8") as f:
+              issue = json.load(f)
+
+          fields = issue.get("fields", {})
+          summary = fields.get("summary", "")
+          status = (fields.get("status") or {}).get("name", "")
+          issue_type = (fields.get("issuetype") or {}).get("name", "")
+          description = fields.get("description")
+
+          def adf_to_text(node):
+              if isinstance(node, str):
+                  return node
+              if isinstance(node, list):
+                  return "".join(adf_to_text(item) for item in node)
+              if not isinstance(node, dict):
+                  return ""
+              node_type = node.get("type")
+              text = ""
+              if node_type == "text":
+                  text += node.get("text", "")
+              if node_type == "hardBreak":
+                  text += "\n"
+              content = node.get("content", [])
+              child = "".join(adf_to_text(item) for item in content)
+              if node_type in {"paragraph", "heading", "listItem"}:
+                  text += child + "\n"
+              elif node_type in {"bulletList", "orderedList", "doc"}:
+                  text += child
+              else:
+                  text += child
+              return text
+
+          description_text = adf_to_text(description).strip() if description else ""
+
+          acceptance_lines = []
+          if description_text:
+              lines = [line.strip(" -\t") for line in description_text.splitlines() if line.strip()]
+              collecting = False
+              for line in lines:
+                  lower = line.lower()
+                  if "acceptance criteria" in lower:
+                      collecting = True
+                      continue
+                  if collecting:
+                      if line.endswith(":") and "acceptance" not in lower:
+                          break
+                      acceptance_lines.append(line)
+
+          if not acceptance_lines:
+              acceptance_lines = ["No explicit acceptance criteria detected in Jira description."]
+
+          out_path = os.environ["GITHUB_OUTPUT"]
+          with open(out_path, "a", encoding="utf-8") as out:
+              out.write(f"summary<<EOF\n{summary}\nEOF\n")
+              out.write(f"status<<EOF\n{status}\nEOF\n")
+              out.write(f"issue_type<<EOF\n{issue_type}\nEOF\n")
+              out.write(f"description<<EOF\n{description_text}\nEOF\n")
+              out.write(f"acceptance<<EOF\n" + "\n".join(acceptance_lines) + "\nEOF\n")
+          PY
+
+      - name: Add Jira context to PR body
+        uses: actions/github-script@v7
+        env:
+          JIRA_BASE_URL: ${{ secrets.JIRA_BASE_URL }}
+          JIRA_KEY: ${{ steps.jira_key.outputs.jira_key }}
+          JIRA_SUMMARY: ${{ steps.jira.outputs.summary }}
+          JIRA_STATUS: ${{ steps.jira.outputs.status }}
+          JIRA_TYPE: ${{ steps.jira.outputs.issue_type }}
+          JIRA_ACCEPTANCE: ${{ steps.jira.outputs.acceptance }}
+        with:
+          script: |
+            const markerStart = "<!-- jira-context:start -->";
+            const markerEnd = "<!-- jira-context:end -->";
+            const currentBody = context.payload.pull_request.body || "";
+
+            const jiraBaseUrl = (process.env.JIRA_BASE_URL || "").replace(/\/$/, "");
+            const jiraKey = process.env.JIRA_KEY || "";
+            const jiraSummary = process.env.JIRA_SUMMARY || "";
+            const jiraStatus = process.env.JIRA_STATUS || "";
+            const jiraType = process.env.JIRA_TYPE || "";
+            const acceptance = (process.env.JIRA_ACCEPTANCE || "")
+              .split("\n")
+              .filter(Boolean)
+              .map(line => `- [ ] ${line}`)
+              .join("\n");
+
+            const block = [
+              markerStart,
+              "## Jira Context",
+              `- **Ticket**: [${jiraKey}](${jiraBaseUrl}/browse/${jiraKey})`,
+              `- **Type**: ${jiraType}`,
+              `- **Status**: ${jiraStatus}`,
+              `- **Summary**: ${jiraSummary}`,
+              "",
+              "### Acceptance Criteria from Jira",
+              acceptance || "- [ ] No explicit acceptance criteria detected in Jira description.",
+              markerEnd
+            ].join("\n");
+
+            let nextBody = currentBody;
+            const markerRegex = /<!-- jira-context:start -->[\s\S]*?<!-- jira-context:end -->/m;
+            if (markerRegex.test(currentBody)) {
+              nextBody = currentBody.replace(markerRegex, block);
+            } else {
+              nextBody = [currentBody.trim(), block].filter(Boolean).join("\n\n");
+            }
+
+            await github.rest.pulls.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.payload.pull_request.number,
+              body: nextBody
+            });
+
+      - name: Post Jira-context review kickoff comment
+        uses: actions/github-script@v7
+        env:
+          JIRA_KEY: ${{ steps.jira_key.outputs.jira_key }}
+          JIRA_SUMMARY: ${{ steps.jira.outputs.summary }}
+          JIRA_ACCEPTANCE: ${{ steps.jira.outputs.acceptance }}
+        with:
+          script: |
+            const marker = "<!-- jira-review-kickoff -->";
+            const acceptance = (process.env.JIRA_ACCEPTANCE || "")
+              .split("\n")
+              .filter(Boolean)
+              .map(line => `- [ ] ${line}`)
+              .join("\n");
+
+            const body = [
+              marker,
+              "Jira-context review has started.",
+              "",
+              `**Ticket**: ${process.env.JIRA_KEY || ""}`,
+              `**Summary**: ${process.env.JIRA_SUMMARY || ""}`,
+              "",
+              "**Review checklist from Jira acceptance criteria:**",
+              acceptance || "- [ ] No explicit acceptance criteria detected in Jira description."
+            ].join("\n");
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              per_page: 100
+            });
+
+            const existing = comments.find(comment =>
+              comment.user?.type === "Bot" && comment.body?.includes(marker)
+            );
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body
+              });
+            }
+
+      - name: Submit non-blocking review note with Jira context
+        if: github.event.action != 'synchronize'
+        uses: actions/github-script@v7
+        env:
+          JIRA_KEY: ${{ steps.jira_key.outputs.jira_key }}
+          JIRA_SUMMARY: ${{ steps.jira.outputs.summary }}
+        with:
+          script: |
+            const body = [
+              "Automated review kickoff (Jira context):",
+              `- Ticket: ${process.env.JIRA_KEY || ""}`,
+              `- Summary: ${process.env.JIRA_SUMMARY || ""}`,
+              "",
+              "Please review this PR against the Jira acceptance criteria included in the PR description."
+            ].join("\n");
+
+            await github.rest.pulls.createReview({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.payload.pull_request.number,
+              event: "COMMENT",
+              body
+            });
