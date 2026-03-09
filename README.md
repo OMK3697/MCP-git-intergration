@@ -11,6 +11,7 @@ When a pull request targets `main` or `master`, the workflow:
 - updates PR description with Jira context + acceptance criteria checklist
 - posts/updates a Jira-context review kickoff comment
 - adds a non-blocking review comment asking reviewers to review against Jira criteria
+- posts/updates a final "review finished" comment with success/failure status
 
 ### Required GitHub repository secrets
 
