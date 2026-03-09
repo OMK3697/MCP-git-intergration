@@ -26,6 +26,14 @@ class UserControllerTest {
     }
 
     @Test
+    void getUserByNameShouldReturnUserWhenNameCaseDiffers() throws Exception {
+        mockMvc.perform(get("/api/users/search").param("name", "john doe"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value(200))
+                .andExpect(jsonPath("$.data.name").value("John Doe"));
+    }
+
+    @Test
     void getUserByNameShouldReturnNotFoundWhenMissing() throws Exception {
         mockMvc.perform(get("/api/users/search").param("name", "Unknown User"))
                 .andExpect(status().isNotFound())
