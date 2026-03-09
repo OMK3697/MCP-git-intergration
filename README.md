@@ -11,6 +11,11 @@ When a pull request targets `main` or `master`, the workflow:
 - updates PR description with Jira context + acceptance criteria checklist
 - posts/updates a Jira-context review kickoff comment
 - adds a non-blocking review comment asking reviewers to review against Jira criteria
+- runs dual AI review tools:
+  - `gpt-5.3-codex`
+  - `claude 4.6 opus high` (configurable via `ANTHROPIC_MODEL` variable)
+- posts/updates one PR comment containing both tool reviews
+- posts/updates a final "review finished" comment with success/failure status
 
 ### Required GitHub repository secrets
 
@@ -18,5 +23,11 @@ Add these secrets in GitHub repository settings:
 - `JIRA_BASE_URL` (example: `https://gourav-test-24.atlassian.net`)
 - `JIRA_EMAIL` (Atlassian account email)
 - `JIRA_API_TOKEN` (Atlassian API token)
+- `OPENAI_API_KEY`
+- `ANTHROPIC_API_KEY`
+
+Optional repository variables:
+- `OPENAI_MODEL` (default: `gpt-5.3-codex`)
+- `ANTHROPIC_MODEL` (default: `claude-opus-4-1-20250805`)
 
 If Jira key is missing from PR title/body/branch, the workflow comments and fails the check.
