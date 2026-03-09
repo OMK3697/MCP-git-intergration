@@ -318,7 +318,7 @@ jobs:
             fs.writeFileSync("pr_patch.txt", truncated, "utf8");
             core.setOutput("truncated", combined.length > truncated.length ? "true" : "false");
 
-      - name: Run dual AI review (GPT + Claude)
+      - name: Run AI review with available providers (non-blocking)
         id: dual_ai_review
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
@@ -330,16 +330,13 @@ jobs:
           JIRA_ACCEPTANCE: ${{ steps.jira.outputs.acceptance }}
         run: |
           set -euo pipefail
-
-          if [ -z "${OPENAI_API_KEY:-}" ] || [ -z "${ANTHROPIC_API_KEY:-}" ]; then
-            echo "OPENAI_API_KEY and ANTHROPIC_API_KEY secrets are required."
-            exit 1
-          fi
+          echo "Starting AI review. Missing/invalid provider keys will be logged and skipped."
 
           python - <<'PY'
           import json
           import os
           import urllib.request
+          import urllib.error
 
           jira_key = os.environ.get("JIRA_KEY", "")
           jira_summary = os.environ.get("JIRA_SUMMARY", "")
@@ -368,6 +365,8 @@ jobs:
           """
 
           def call_openai():
+              if not os.environ.get("OPENAI_API_KEY"):
+                  return "OpenAI review skipped: OPENAI_API_KEY is not configured."
               payload = {
                   "model": os.environ.get("OPENAI_MODEL", "gpt-5.3-codex"),
                   "input": prompt
@@ -389,6 +388,8 @@ jobs:
               return text
 
           def call_anthropic():
+              if not os.environ.get("ANTHROPIC_API_KEY"):
+                  return "Anthropic review skipped: ANTHROPIC_API_KEY is not configured."
               payload = {
                   "model": os.environ.get("ANTHROPIC_MODEL", "claude-opus-4-1-20250805"),
                   "max_tokens": 1200,
@@ -418,17 +419,36 @@ jobs:
                   text = "No review text returned by Claude tool."
               return text
 
-          gpt_review = call_openai()
-          claude_review = call_anthropic()
+          def safe_call(provider_name, fn):
+              try:
+                  return fn()
+              except urllib.error.HTTPError as exc:
+                  body = ""
+                  try:
+                      body = exc.read().decode("utf-8", errors="replace")
+                  except Exception:
+                      body = "<unable to read error body>"
+                  return (
+                      f"{provider_name} review failed with HTTP {exc.code}. "
+                      f"Error body:\n\n```\n{body}\n```"
+                  )
+              except Exception as exc:
+                  return f"{provider_name} review failed: {exc}"
+
+          gpt_review = safe_call("OpenAI", call_openai)
+          claude_review = safe_call("Anthropic", call_anthropic)
 
           with open("gpt_review.md", "w", encoding="utf-8") as f:
-              f.write(gpt_review)
+              f.write(gpt_review + "\n")
           with open("claude_review.md", "w", encoding="utf-8") as f:
-              f.write(claude_review)
+              f.write(claude_review + "\n")
+
+          if "failed" in gpt_review.lower() or "failed" in claude_review.lower():
+              print("One or more AI providers failed. Logged errors without failing the workflow.")
           PY
 
       - name: Post GPT review comment
-        if: success()
+        if: always()
         uses: actions/github-script@v7
         env:
           JIRA_KEY: ${{ steps.jira_key.outputs.jira_key }}
@@ -476,7 +496,7 @@ jobs:
             }
 
       - name: Post Claude review comment
-        if: success()
+        if: always()
         uses: actions/github-script@v7
         env:
           JIRA_KEY: ${{ steps.jira_key.outputs.jira_key }}
