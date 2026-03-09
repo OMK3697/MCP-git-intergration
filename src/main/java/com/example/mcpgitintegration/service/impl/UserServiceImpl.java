@@ -32,4 +32,11 @@ public class UserServiceImpl implements UserService {
                 .filter(user -> user.getId().equals(id))
                 .findFirst();
     }
+
+    @Override
+    public Optional<User> getUserByName(String name) {
+        return users.stream()
+                .filter(user -> user.getName().equalsIgnoreCase(name))
+                .findFirst();
+    }
 }
