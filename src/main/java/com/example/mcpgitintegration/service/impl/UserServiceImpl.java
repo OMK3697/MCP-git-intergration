@@ -35,8 +35,9 @@ public class UserServiceImpl implements UserService {
 
     @Override
     public Optional<User> getUserByName(String name) {
+        if (name == null) return Optional.empty();
         return users.stream()
-                .filter(user -> user.getName().equalsIgnoreCase(name))
+                .filter(user -> name.equalsIgnoreCase(user.getName()))
                 .findFirst();
     }
 }

@@ -41,8 +41,4 @@ class UserControllerTest {
                 .andExpect(jsonPath("$.message").value("User not found with name: Unknown User"));
     }
 
-    @Test
-    void workflowTriggerNoOp() {
-        // Intentionally empty test to trigger PR synchronize workflow run.
-    }
 }
