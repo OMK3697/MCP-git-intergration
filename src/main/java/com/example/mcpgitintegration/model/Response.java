@@ -1,5 +1,8 @@
 package com.example.mcpgitintegration.model;
 
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+
 public class Response<T> {
 
     private int status;
@@ -15,12 +18,14 @@ public class Response<T> {
         this.data = data;
     }
 
-    public static <T> Response<T> success(T data) {
-        return new Response<>(200, "Success", data);
+    public static <T> ResponseEntity<Response<T>> success(T data) {
+        Response<T> response = new Response<>(200, "Success", data);
+        return ResponseEntity.ok(response);
     }
 
-    public static <T> Response<T> error(int status, String message) {
-        return new Response<>(status, message, null);
+    public static <T> ResponseEntity<Response<T>> error(HttpStatus httpStatus, String message) {
+        Response<T> response = new Response<>(httpStatus.value(), message, null);
+        return ResponseEntity.status(httpStatus).body(response);
     }
 
     public int getStatus() {
