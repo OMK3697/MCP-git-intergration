@@ -1,0 +1,100 @@
+---
+alwaysApply: true
+---
+
+# MCP Workflow – Pull Request Review Rules
+
+## 🔍 PR Review Workflow
+
+When the user asks to **review a Pull Request** (by providing a PR URL or PR number):
+
+1. **Parse the PR details** from the URL or number.
+   - Example: `https://github.com/OMK3697/MCP-git-intergration/pull/5` → owner: `OMK3697`, repo: `MCP-git-intergration`, PR number: `5`.
+2. **Fetch the PR metadata** using GitHub MCP tools (`get_pull_request`) to understand:
+   - Title, description, base branch, head branch, and author.
+3. **Fetch the changed files** using `get_pull_request_files` to see every file diff in the PR.
+4. **Fetch existing reviews & comments** using `get_pull_request_reviews` and `get_pull_request_comments` to understand prior feedback.
+
+---
+
+## 💬 Review Comments (Mandatory)
+
+**Always** add review comments on the PR. This is non-negotiable:
+
+1. **Read and analyse every changed file** in the PR thoroughly.
+2. **Add inline review comments** on specific lines where you find:
+   - Bugs, logic errors, or potential runtime issues.
+   - SOLID principle violations (Single Responsibility, Open/Closed, Liskov Substitution, Interface Segregation, Dependency Inversion).
+   - DRY violations (duplicated code or logic).
+   - Missing error handling or input validation.
+   - Security concerns (e.g., SQL injection, unvalidated input, exposed secrets).
+   - Performance issues (e.g., N+1 queries, unnecessary loops, missing indexes).
+   - Code readability issues (unclear naming, overly complex methods, missing comments for non-obvious logic).
+   - Missing or incorrect tests.
+3. **Use `create_pull_request_review`** with the `comments` array to attach line-level comments to the specific files and lines.
+4. If there are **no issues found**, still add a review comment acknowledging the code quality (e.g., "Clean implementation, well structured.").
+
+---
+
+## ✅ Submit Review Decision
+
+After analysing all changes, **submit a formal review** using `create_pull_request_review` with the appropriate `event`:
+
+| Scenario | Event | When to use |
+|---|---|---|
+| Code looks good, no issues | `APPROVE` | All changes meet quality standards, no blocking concerns. |
+| Minor suggestions only | `COMMENT` | Non-blocking suggestions or questions; code is acceptable as-is. |
+| Blocking issues found | `REQUEST_CHANGES` | Bugs, security flaws, broken logic, or significant quality issues that must be fixed before merge. |
+
+### Rules for the review decision:
+
+- **`APPROVE`**: Use when the code is production-ready. Mention what was done well.
+- **`REQUEST_CHANGES`**: Use when there are blocking issues. Clearly list every issue that needs to be addressed and explain *why*.
+- **`COMMENT`**: Use when you have feedback or questions but nothing blocking. Also use this as a **fallback** when you cannot submit `APPROVE` or `REQUEST_CHANGES` (e.g., reviewing your own PR).
+
+> ⚠️ **Own PR Limitation**: GitHub does not allow you to `APPROVE` or `REQUEST_CHANGES` on your own PR. In this case, fall back to `COMMENT` and clearly state your review findings in the body.
+
+---
+
+## 📝 Review Body Format
+
+The review body (the `body` parameter in `create_pull_request_review`) should follow this structure:
+
+```
+## PR Review: <PR Title>
+
+### Summary
+<Brief summary of what the PR does based on the changes>
+
+### 🟢 What looks good
+- <Positive observations about the code>
+
+### 🟡 Suggestions (non-blocking)
+- <Optional improvements or style nits>
+
+### 🔴 Issues (blocking)
+- <Critical issues that must be fixed – only include if requesting changes>
+
+### Verdict
+<APPROVED / CHANGES REQUESTED / COMMENT – with a one-line reason>
+```
+
+---
+
+## 🔗 Linking Review to Jira (Optional)
+
+If the PR title or branch name contains a **Jira ticket key** (e.g., `KAN-1`):
+
+1. **Add a comment on the Jira ticket** using `jira_add_comment` with a summary of the review outcome.
+   - Example: `"PR #5 reviewed – Approved. No blocking issues found. [PR Link](https://github.com/...)"`
+2. This ensures full traceability between Jira and GitHub.
+
+---
+
+## 🚀 Post-Review Actions
+
+After submitting the review:
+
+1. **Inform the user** of the review decision and a summary of comments left.
+2. If `REQUEST_CHANGES` was submitted, provide a clear checklist of what the author needs to fix.
+3. If `APPROVE` was submitted, let the user know the PR is ready to merge (but do **not** auto-merge unless explicitly asked).

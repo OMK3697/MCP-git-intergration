@@ -9,6 +9,16 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
+/**
+ * Custom health endpoint.
+ *
+ * @deprecated This controller is superseded by Spring Boot Actuator's
+ *             {@code /actuator/health} endpoint (KAN-1). Use
+ *             {@code /actuator/health} for production monitoring instead.
+ *             This endpoint is retained temporarily for backward compatibility
+ *             and will be removed in a future release.
+ */
+@Deprecated
 @RestController
 @RequestMapping("/api")
 public class HealthController {
@@ -26,6 +36,10 @@ public class HealthController {
         this.applicationVersion = applicationVersion;
     }
 
+    /**
+     * @deprecated Use {@code /actuator/health} instead.
+     */
+    @Deprecated
     @GetMapping("/health")
     public ResponseEntity<Map<String, Object>> getHealth() {
         Map<String, Object> payload = new LinkedHashMap<>();
