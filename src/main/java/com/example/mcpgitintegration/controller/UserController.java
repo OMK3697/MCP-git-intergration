@@ -4,8 +4,11 @@ import com.example.mcpgitintegration.model.Response;
 import com.example.mcpgitintegration.model.User;
 import com.example.mcpgitintegration.service.UserService;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -20,17 +23,26 @@ public class UserController {
     private UserService userService;
 
     @GetMapping
-    public Response<List<User>> getAllUsers() {
+    public ResponseEntity<Response<List<User>>> getAllUsers() {
         List<User> users = userService.getAllUsers();
         return Response.success(users);
     }
 
     @GetMapping("/{id}")
-    public Response<User> getUserById(@PathVariable Long id) {
+    public ResponseEntity<Response<User>> getUserById(@PathVariable Long id) {
         Optional<User> user = userService.getUserById(id);
         if (user.isPresent()) {
             return Response.success(user.get());
         }
-        return Response.error(404, "User not found with id: " + id);
+        return Response.error(HttpStatus.NOT_FOUND, "User not found with id: " + id);
+    }
+
+    @GetMapping("/search")
+    public ResponseEntity<Response<User>> getUserByName(@RequestParam String name) {
+        Optional<User> user = userService.getUserByName(name);
+        if (user.isPresent()) {
+            return Response.success(user.get());
+        }
+        return Response.error(HttpStatus.NOT_FOUND, "User not found with name: " + name);
     }
 }
