@@ -27,6 +27,7 @@ out/
 
 # Cursor
 .cursor/
+!.cursor/rules/
 
 # OS files
 .DS_Store

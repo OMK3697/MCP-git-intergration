@@ -1,0 +1,75 @@
+---
+alwaysApply: true
+---
+
+# MCP Workflow – Jira + GitHub Integration Rules
+
+## 🔀 Branch & Git Workflow
+
+When the user provides a **Jira ticket URL** to work on, follow this exact sequence **before writing any code**:
+
+1. **Parse the ticket key** from the URL.
+   - Example: `https://gourav-test-24.atlassian.net/browse/KAN-1` → ticket key is `KAN-1`.
+2. **Checkout the `main` branch** and pull the latest changes:
+   ```
+   git checkout main && git pull origin main
+   ```
+3. **Create a new branch** named exactly after the ticket key:
+   ```
+   git checkout -b KAN-1
+   ```
+4. Only **after** these steps are complete, begin implementing the changes.
+
+> **One branch per ticket** – never reuse an existing feature branch for a different ticket.
+
+---
+
+## 📖 Understanding the Ticket
+
+- Use the Jira MCP tools (`jira_get_issue`) to fetch the full ticket details (summary, description, acceptance criteria, labels, priority).
+- Read and understand the requirements **before** writing any code.
+
+---
+
+## ✅ Pull Request & Jira Update
+
+When the user says the work is done and asks to **create a PR**:
+
+1. **Stage, commit, and push** the branch:
+   ```
+   git add .
+   git commit -m "<TICKET-KEY>: <short summary of changes>"
+   git push origin <TICKET-KEY>
+   ```
+2. **Create a Pull Request** on GitHub via MCP tools (`create_pull_request`):
+   - **Title**: `<TICKET-KEY>: <Jira ticket summary>`
+   - **Base branch**: `main`
+   - **Head branch**: `<TICKET-KEY>`
+   - **Body**: Include a summary of changes, the Jira ticket link, and any relevant details.
+3. **Link the PR back to the Jira ticket** using `jira_add_comment` or `jira_create_remote_issue_link`:
+   - Add a comment or remote link on the Jira issue containing the PR URL so the ticket has full traceability.
+
+---
+
+## 🏗️ Code Quality Standards
+
+All code written in this project **must** adhere to:
+
+### SOLID Principles
+- **S – Single Responsibility**: Each class/method should have one and only one reason to change.
+- **O – Open/Closed**: Classes should be open for extension but closed for modification. Prefer interfaces and abstractions.
+- **L – Liskov Substitution**: Subtypes must be substitutable for their base types without altering correctness.
+- **I – Interface Segregation**: Prefer small, focused interfaces over large, general-purpose ones.
+- **D – Dependency Inversion**: Depend on abstractions (interfaces), not on concrete implementations. Use constructor injection.
+
+### DRY (Don't Repeat Yourself)
+- Extract repeated logic into reusable methods, utility classes, or shared services.
+- Avoid copy-pasting code blocks – if the same logic appears in more than one place, refactor it.
+
+### General Best Practices
+- Follow existing project conventions (package structure, naming, patterns).
+- Write clean, readable code with meaningful names.
+- Add appropriate error handling and input validation.
+- Keep methods short and focused.
+- Use DTOs / response wrappers consistently (see `Response.java`).
+- Service layer should use interfaces with separate impl classes (see `UserService.java` and `UserServiceImpl.java`).
