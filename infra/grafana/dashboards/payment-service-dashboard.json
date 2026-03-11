@@ -1,0 +1,300 @@
+{
+  "id": null,
+  "uid": "payments-analytics",
+  "title": "Payment Service Analytics",
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 4,
+  "refresh": "10s",
+  "tags": [
+    "payments",
+    "loki",
+    "dummy-data"
+  ],
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "templating": {
+    "list": []
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Log Volume by Type (per 1m)",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (log_type) (count_over_time({app=\"payments-service\",source=\"dummy-events-v2\"}[1m]))",
+          "legendFormat": "{{log_type}}"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Latency Percentiles (ms)",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "avg_over_time({app=\"payments-service\",source=\"dummy-app-metrics-v2\"} | json apiLatencyP50Ms=\"apiLatencyP50Ms\" | unwrap apiLatencyP50Ms [5m])",
+          "legendFormat": "app p50"
+        },
+        {
+          "refId": "B",
+          "expr": "avg_over_time({app=\"payments-service\",source=\"dummy-app-metrics-v2\"} | json apiLatencyP95Ms=\"apiLatencyP95Ms\" | unwrap apiLatencyP95Ms [5m])",
+          "legendFormat": "app p95"
+        },
+        {
+          "refId": "C",
+          "expr": "avg_over_time({app=\"payments-service\",source=\"dummy-app-metrics-v2\"} | json apiLatencyP99Ms=\"apiLatencyP99Ms\" | unwrap apiLatencyP99Ms [5m])",
+          "legendFormat": "app p99"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Error Logs (last 15m)",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 0,
+        "y": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 20
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(count_over_time({app=\"payments-service\",source=\"dummy-events-v2\",level=\"error\"}[15m]))"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Payment Success (last 15m)",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 4,
+        "y": 8
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(count_over_time({app=\"payments-service\",source=\"dummy-events-v2\",log_type=\"payment_success\"}[15m]))"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Payment Failed (last 15m)",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 8,
+        "y": 8
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(count_over_time({app=\"payments-service\",source=\"dummy-events-v2\",log_type=\"payment_failed\"}[15m]))"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "CPU Usage (%)",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 12,
+        "y": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "avg_over_time({app=\"payments-service\",source=\"dummy-app-metrics-v2\"} | json cpuUsagePct=\"cpuUsagePct\" | unwrap cpuUsagePct [5m])",
+          "legendFormat": "app cpu avg"
+        },
+        {
+          "refId": "B",
+          "expr": "max_over_time({app=\"payments-service\",source=\"dummy-app-metrics-v2\"} | json cpuUsagePct=\"cpuUsagePct\" | unwrap cpuUsagePct [5m])",
+          "legendFormat": "app cpu max"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Memory Usage (MB)",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 18,
+        "y": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "decmbytes"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "avg_over_time({app=\"payments-service\",source=\"dummy-app-metrics-v2\"} | json memoryUsageMB=\"memoryUsageMB\" | unwrap memoryUsageMB [5m])",
+          "legendFormat": "app mem avg"
+        },
+        {
+          "refId": "B",
+          "expr": "max_over_time({app=\"payments-service\",source=\"dummy-app-metrics-v2\"} | json memoryUsageMB=\"memoryUsageMB\" | unwrap memoryUsageMB [5m])",
+          "legendFormat": "app mem max"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "logs",
+      "title": "Recent Error Logs (JSON)",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 13
+      },
+      "options": {
+        "showTime": true,
+        "showLabels": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": true,
+        "enableLogDetails": true
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "{app=\"payments-service\",source=\"dummy-events-v2\",level=\"error\"} | json",
+          "queryType": "range"
+        }
+      ]
+    }
+  ]
+}
