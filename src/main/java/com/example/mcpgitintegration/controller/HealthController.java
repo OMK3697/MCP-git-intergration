@@ -1,53 +1,42 @@
 package com.example.mcpgitintegration.controller;
 
-import org.springframework.beans.factory.annotation.Value;
+import com.example.mcpgitintegration.model.health.HealthCheckResponse;
+import com.example.mcpgitintegration.service.HealthCheckService;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.util.LinkedHashMap;
-import java.util.Map;
-
 /**
- * Custom health endpoint.
- *
- * @deprecated This controller is superseded by Spring Boot Actuator's
- *             {@code /actuator/health} endpoint (KAN-1). Use
- *             {@code /actuator/health} for production monitoring instead.
- *             This endpoint is retained temporarily for backward compatibility
- *             and will be removed in a future release.
+ * REST controller that exposes the application health check endpoint.
+ * <p>
+ * Returns 200 OK when all database connections are healthy,
+ * or 503 Service Unavailable when any connection is down.
  */
-@Deprecated
 @RestController
 @RequestMapping("/api")
 public class HealthController {
 
-    private final long startTimeMillis;
-    private final String applicationName;
-    private final String applicationVersion;
+    private final HealthCheckService healthCheckService;
 
-    public HealthController(
-            @Value("${spring.application.name:application}") String applicationName,
-            @Value("${app.version:unknown}") String applicationVersion
-    ) {
-        this.startTimeMillis = System.currentTimeMillis();
-        this.applicationName = applicationName;
-        this.applicationVersion = applicationVersion;
+    public HealthController(HealthCheckService healthCheckService) {
+        this.healthCheckService = healthCheckService;
     }
 
     /**
-     * @deprecated Use {@code /actuator/health} instead.
+     * Health check endpoint that validates MySQL and MongoDB connectivity.
+     *
+     * @return 200 OK if all components are UP; 503 if any component is DOWN
      */
-    @Deprecated
     @GetMapping("/health")
-    public ResponseEntity<Map<String, Object>> getHealth() {
-        Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("appName", applicationName);
-        payload.put("version", applicationVersion);
-        payload.put("status", "UP");
-        payload.put("uptime", System.currentTimeMillis() - startTimeMillis);
+    public ResponseEntity<HealthCheckResponse> getHealth() {
+        HealthCheckResponse response = healthCheckService.checkHealth();
 
-        return ResponseEntity.ok(payload);
+        if ("UP".equals(response.getStatus())) {
+            return ResponseEntity.ok(response);
+        }
+
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(response);
     }
 }
